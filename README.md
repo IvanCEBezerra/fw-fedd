@@ -1,34 +1,27 @@
-# fw-fedd
-Biblioteca Python para detectar mudanças de conceito em séries temporais univariadas à medida que novas observações chegam. O FW-FEDD extrai 23 características de janelas deslizantes, compara cada janela com uma referência usando distância de Pearson ponderada e sinaliza mudanças com um teste ICI cumulativo.
-
 # FW-FEDD — detecção online de mudanças de conceito
 
 Biblioteca Python para detectar mudanças de conceito em séries temporais univariadas. O detector processa uma observação por vez, extrai 23 características de uma janela deslizante e compara cada janela com a referência do regime atual. A comparação usa distância de Pearson ponderada pelo inverso do desvio padrão das características. O teste ICI cumulativo sinaliza quando as distâncias deixam de ser compatíveis com o regime de referência.
 
 O projeto implementa o componente de detecção inspirado no *Feature Extraction and Weighting for Explicit Concept Drift Detection* (FW-FEDD), da tese de Rodolfo Carneiro Cavalcante. O código é uma reconstrução independente, com escolhas próprias para a extração de características, a estimação do período e a implementação do ICI. [Tese de Cavalcante, capítulos 4 e 5](https://repositorio.ufpe.br/bitstream/123456789/25349/1/TESE%20Rodolfo%20Carneiro%20Cavalcante.pdf)
 
-## Instalação
+## Executar a partir do código-fonte
 
-Requer Python 3.10 ou superior. As dependências do detector são NumPy, SciPy e statsmodels. Na raiz do projeto, instale em modo editável.
-
-```bash
-python -m pip install -e .
-```
-
-Para instalar a partir de outra aplicação, informe o caminho da pasta que contém o `pyproject.toml`.
+Requer Python 3.10 ou superior, NumPy, SciPy e statsmodels. Clone o repositório em uma pasta chamada `fw_fedd` e execute o Python a partir da pasta que a contém. O nome `fw_fedd` permite resolver os imports internos do detector.
 
 ```bash
-python -m pip install "/caminho/para/fw-fedd-thesis"
+git clone https://github.com/IvanCEBezerra/fw-fedd.git fw_fedd
+python -m pip install numpy scipy statsmodels
+python -c "from fw_fedd.detection.detector import FWFEDDDetector; print(FWFEDDDetector().update(1.0))"
 ```
 
-O pacote de distribuição se chama `fw-fedd` e o módulo importável, `fw_fedd`. Os CSVs e PNGs incluídos no repositório ficam fora do pacote instalado.
+A saída esperada é `normal`. Salve seus scripts de uso ao lado da pasta `fw_fedd/`.
 
 ## Uso rápido
 
 Crie uma instância por série e forneça os valores em ordem cronológica. `update` recebe um valor escalar finito por chamada e retorna `"normal"` ou `"drift"`. O alarme é retornado na mesma chamada que registra o evento. Durante o aquecimento, `"normal"` indica que nenhum alarme foi emitido. Use `last_test_performed` para saber se houve um teste na amostra atual.
 
 ```python
-from fw_fedd import FWFEDDDetector
+from fw_fedd.detection.detector import FWFEDDDetector
 
 detector = FWFEDDDetector()
 
@@ -43,33 +36,6 @@ def receber_observacao(valor: float) -> str:
 ```
 
 Chame `receber_observacao(valor)` a cada novo valor do fluxo. O índice é contado a partir de zero e identifica a observação que disparou o alarme. Na amostra seguinte, o detector começa a formar uma nova referência e preserva a contagem global e o histórico de alarmes. Use `reset()` para começar uma série independente na mesma instância, com contadores e histórico zerados.
-
-### Executar sobre um CSV incluído no projeto
-
-Execute o exemplo abaixo a partir da raiz do projeto. A coluna `value` alimenta o detector. A coluna `is_drift` fornece as fronteiras conhecidas do gerador para inspeção dos resultados.
-
-```python
-import csv
-from pathlib import Path
-
-from fw_fedd import FWFEDDDetector
-
-caminho = Path("fw_fedd/data/dataset/AR/data/series_01.csv")
-detector = FWFEDDDetector()
-mudancas_rotuladas = []
-
-with caminho.open(encoding="utf-8", newline="") as arquivo:
-    for linha in csv.DictReader(arquivo):
-        detector.update(float(linha["value"]))
-        if linha["is_drift"] == "1":
-            mudancas_rotuladas.append(int(linha["index"]))
-
-print("Amostras processadas:", detector.n_samples)
-print("Mudanças rotuladas:", mudancas_rotuladas)
-print("Alarmes:", [indice for indice, _ in detector.detections])
-```
-
-O índice de um alarme pode ocorrer depois da fronteira rotulada. Para medir atraso, falsos alarmes ou mudanças não detectadas, defina a tolerância e a regra de pareamento entre alarmes e fronteiras antes de comparar os resultados.
 
 ## Parâmetros e diagnósticos
 
@@ -115,74 +81,28 @@ Com os padrões, a referência é formada na amostra de índice **149**, as 300 
 
 ## Dados sintéticos
 
-A pasta [`fw_fedd/data/dataset/`](fw_fedd/data/dataset/) contém 80 séries do perfil `corrected`, com 20 realizações por família, um CSV e um gráfico por série e um [`metadata.json`](fw_fedd/data/dataset/metadata.json) com sementes individuais, configuração e índices das mudanças.
+Esta versão do repositório contém o código do detector. O gerador, os CSVs, os gráficos e os metadados das séries sintéticas ficam na cópia local do projeto. Para testar o detector a partir deste repositório, alimente `update()` com os valores da sua série em ordem cronológica.
 
-| Família | Processo gerador |
-| --- | --- |
-| `AR` | Modelos autorregressivos com diferentes coeficientes e ordens. |
-| `LS` | Padrões sazonais periódicos com ruído. |
-| `NL` | Modelos autorregressivos não lineares com transição suave. |
-| `RW-AR-NL` | Combinação de passeio aleatório, processos autorregressivos e processos não lineares. |
-
-Cada série contém 11.000 observações em 11 segmentos de 1.000 amostras. Os conceitos seguem a sequência recorrente `1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1`. Há 10 fronteiras rotuladas por série, nos índices 1000 a 10000, em passos de 1000.
-
-| Coluna | Conteúdo |
-| --- | --- |
-| `index` | Índice da observação a partir de zero. |
-| `t` | Contagem da observação a partir de um. |
-| `value` | Valor observado. |
-| `concept_id` | Identificador do regime gerador. |
-| `is_drift` | `1` na primeira amostra de um novo segmento e `0` nas demais. |
-
-### Gerar novos dados
-
-Na raiz do projeto, execute o comando abaixo para gerar uma série curta por família, com CSVs e metadados.
-
-```bash
-python -m fw_fedd.data.gen_dataset --profile corrected --output ./dataset_demo --n-series 1 --segment-length 60 --seed 42 --no-plots
-```
-
-Para gerar também os gráficos, instale o extra `data` e execute o gerador sem `--no-plots`.
-
-```bash
-python -m pip install -e ".[data]"
-python -m fw_fedd.data.gen_dataset --profile corrected --output ./dataset_com_graficos --seed 42
-```
-
-Sem `--output`, o gerador usa `fw_fedd/data/dataset_corrected/` ou `fw_fedd/data/dataset_literal/`, de acordo com o perfil. Se algum arquivo de saída já existir, o gerador exige `--overwrite` para substituí-lo. Consulte as opções com `python -m fw_fedd.data.gen_dataset --help`.
-
-- **`corrected`** usa transição logística, uma alteração de sinal no primeiro conceito AR e reflexão dos polos explosivos na parte autorregressiva de base de alguns modelos não lineares. O manifesto registra os coeficientes impressos e os efetivamente usados quando aplicável.
-- **`literal`** usa os coeficientes impressos e, por padrão, a função de transição impressa. A geração pode falhar ao encontrar uma singularidade ou valores não finitos. Para ambos os perfis, a inicialização e a escala do ruído são escolhas da implementação.
-
-A geração usa como referência a seção 5.2.1, a Tabela 2 e as equações 5.1–5.2 da tese. Para repetir uma execução, registre a semente, o perfil, as demais opções e as versões de Python e das dependências. Cada realização inclui sua semente e a versão do NumPy no manifesto.
-
-## Estrutura do projeto
+## Estrutura publicada
 
 ```text
-fw-fedd-thesis/
+fw_fedd/                  # Nome da pasta usada ao clonar
 ├── README.md
-├── pyproject.toml
-└── fw_fedd/
-    ├── __init__.py              # API pública do detector
-    ├── detection/
-    │   ├── detector.py          # Fluxo online, calibração e alarmes
-    │   ├── pearson.py           # Distância de Pearson ponderada
-    │   ├── ici.py               # Teste ICI cumulativo
-    │   └── fw_ici.py            # Alias para importações anteriores
-    ├── features/                # STL e extração das 23 características
-    ├── weighting/
-    │   └── fw_module.py         # Pesos pelo inverso do desvio padrão
-    └── data/
-        ├── gen_dataset.py       # Interface de linha de comando
-        ├── synthetic.py         # Geração e exportação das séries
-        └── dataset/             # CSVs, gráficos e metadados
+├── detection/
+│   ├── detector.py       # Fluxo online, calibração e alarmes
+│   ├── pearson.py        # Distância de Pearson ponderada
+│   ├── ici.py            # Teste ICI cumulativo
+│   └── fw_ici.py         # Alias para importações anteriores
+├── features/            # STL e extração das 23 características
+└── weighting/
+    └── fw_module.py     # Pesos pelo inverso do desvio padrão
 ```
 
 ## Escopo e limitações
 
 - O detector processa valores finitos e rejeita `NaN` e infinitos. O fluxo deve chegar em ordem cronológica, com o tratamento de ausências feito pela aplicação.
 - A janela de referência e o período de calibração pressupõem que as primeiras observações de cada regime ofereçam uma referência útil. Mudanças nessa fase podem afetar as decisões posteriores.
-- As janelas sobrepostas geram distâncias potencialmente dependentes. `gamma` controla a largura dos intervalos. O valor 2,5 foi selecionado em um piloto de quatro séries. O multiplicador por si só não especifica a taxa de falsos alarmes sequenciais.
+- As janelas sobrepostas geram distâncias potencialmente dependentes. `gamma` controla a largura dos intervalos. O valor padrão é 2,5. O multiplicador por si só não especifica a taxa de falsos alarmes sequenciais.
 - A implementação concentra-se no detector. A tese também descreve um módulo de previsão com um conjunto de modelos OS-ELM. Os experimentos com o sistema completo dependem desse módulo e do protocolo original.
 
 ## Referências
